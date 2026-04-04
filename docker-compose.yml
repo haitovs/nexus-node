@@ -1,16 +1,14 @@
 services:
-  marzban-node:
-    # build: .
-    image: gozargah/marzban-node:latest
+  nexus-node:
+    container_name: nexus-node
+    image: ghcr.io/haitovs/nexus-node:latest
+    build: .
     restart: always
     network_mode: host
-
-    # env_file: .env
     environment:
-      SSL_CERT_FILE: "/var/lib/marzban-node/ssl_cert.pem"
-      SSL_KEY_FILE: "/var/lib/marzban-node/ssl_key.pem"
-      # SSL_CLIENT_CERT_FILE: "/var/lib/marzban-node/ssl_client_cert.pem"
-      # SERVICE_PROTOCOL: "rest"
-
+      SSL_CLIENT_CERT_FILE: "/var/lib/nexus-node/cert.pem"
+      SERVICE_PORT: "62050"
+      XRAY_API_PORT: "62051"
+      SERVICE_PROTOCOL: "rest"
     volumes:
-      - /var/lib/marzban-node:/var/lib/marzban-node
+      - /var/lib/nexus-node:/var/lib/nexus-node

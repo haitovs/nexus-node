@@ -1,22 +1,34 @@
-# Marzban-node
+# NexusNode — VPN Proxy Node
 
-## Quick install
-Install Marzban-node on your server using this command
+Companion node service for NexusPanel. Runs Xray core on your server.
+
+## Quick Start
+
 ```bash
-sudo bash -c "$(curl -sL https://github.com/Gozargah/Marzban-scripts/raw/master/marzban-node.sh)" @ install
-```
-Install Marzban-node on your server using this command with custom name:
-```bash
-sudo bash -c "$(curl -sL https://github.com/Gozargah/Marzban-scripts/raw/master/marzban-node.sh)" @ install --name marzban-node2
-```
-Or you can only install this script (marzban-node command) on your server by using this command
-```bash
-sudo bash -c "$(curl -sL https://github.com/Gozargah/Marzban-scripts/raw/master/marzban-node.sh)" @ install-script
+docker compose up -d
 ```
 
-Use `help` to view all commands:
-```marzban-node help```
+## Configuration
 
+All settings via environment variables:
 
-## Manual install
-Read the setup guide here: https://gozargah.github.io/marzban/docs/marzban-node
+| Variable | Default | Description |
+|----------|---------|-------------|
+| SERVICE_PORT | 62050 | Panel connection port |
+| XRAY_API_PORT | 62051 | Xray gRPC API port |
+| SERVICE_PROTOCOL | rest | Protocol (rest or rpyc) |
+| SSL_CLIENT_CERT_FILE | /var/lib/nexus-node/cert.pem | Panel certificate |
+
+## Add to Panel
+
+1. Run this node on your VPS
+2. In panel dashboard → Nodes → Add New Node
+3. Enter node IP, port 62050, API port 62051
+4. Copy panel certificate to `/var/lib/nexus-node/cert.pem`
+
+## Manual Install (without Docker)
+
+```bash
+pip install -r requirements.txt
+python main.py
+```
