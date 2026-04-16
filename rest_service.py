@@ -1,5 +1,6 @@
 import asyncio
 import json
+import socket
 import time
 from uuid import UUID, uuid4
 
@@ -10,9 +11,37 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 
-from config import XRAY_ASSETS_PATH, XRAY_EXECUTABLE_PATH
+from config import XRAY_API_HOST, XRAY_API_PORT, XRAY_ASSETS_PATH, XRAY_EXECUTABLE_PATH
 from logger import logger
 from xray import XRayConfig, XRayCore
+
+
+# How long to wait for Xray's grpc API inbound to actually accept TCP
+# connections after the core process starts. If we return /start or /restart
+# before the API port is bindable, the panel sees a successful REST call
+# but its subsequent grpc channel-ready check times out, and (pre-fix) that
+# flipped perfectly-healthy nodes to status=error.
+_API_PORT_WAIT_TIMEOUT = 8.0
+_API_PORT_POLL_INTERVAL = 0.1
+
+
+def _wait_for_api_port(timeout: float = _API_PORT_WAIT_TIMEOUT) -> bool:
+    """Block until the Xray grpc API port accepts a TCP connection.
+
+    Returns True on success, False if timeout expired. The caller decides
+    whether a timeout is fatal — today we log + return the response anyway
+    so a slow-binding API doesn't mask a started core, but the panel gets
+    a hint in the response body that the API wasn't verified.
+    """
+    host = XRAY_API_HOST if XRAY_API_HOST not in ("", "0.0.0.0") else "127.0.0.1"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, XRAY_API_PORT), timeout=0.5):
+                return True
+        except (OSError, socket.timeout):
+            time.sleep(_API_PORT_POLL_INTERVAL)
+    return False
 
 app = FastAPI()
 
@@ -153,7 +182,14 @@ class Service(object):
                 detail=last_log
             )
 
-        return self.response()
+        api_ready = _wait_for_api_port()
+        if not api_ready:
+            logger.warning(
+                f"Xray core reports started but API port {XRAY_API_PORT} "
+                f"did not accept connections within {_API_PORT_WAIT_TIMEOUT}s"
+            )
+
+        return self.response(api_ready=api_ready)
 
     def stop(self, session_id: UUID = Body(embed=True)):
         self.match_session_id(session_id)
@@ -208,7 +244,14 @@ class Service(object):
                 detail=last_log
             )
 
-        return self.response()
+        api_ready = _wait_for_api_port()
+        if not api_ready:
+            logger.warning(
+                f"Xray core reports restarted but API port {XRAY_API_PORT} "
+                f"did not accept connections within {_API_PORT_WAIT_TIMEOUT}s"
+            )
+
+        return self.response(api_ready=api_ready)
 
     async def logs(self, websocket: WebSocket):
         session_id = websocket.query_params.get('session_id')
