@@ -13,6 +13,13 @@ RUN apt-get update \
     && unzip /tmp/xray.zip -d /usr/local/share/xray geoip.dat geosite.dat \
     && chmod +x /usr/local/bin/xray \
     && rm /tmp/xray.zip \
+    # Hysteria2 — apernet/hysteria app binary. Pinned to a known-good
+    # release; bump here to upgrade fleet-wide. See
+    # docs/HYSTERIA2_INTEGRATION.md in the panel repo.
+    && HY2_VERSION="app/v2.8.1" \
+    && curl -fsSL "https://github.com/apernet/hysteria/releases/download/${HY2_VERSION}/hysteria-linux-amd64" \
+        -o /usr/local/bin/hysteria \
+    && chmod +x /usr/local/bin/hysteria \
     && rm -rf /var/lib/apt/lists/*
 
 COPY ./requirements.txt /code/

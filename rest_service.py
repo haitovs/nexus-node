@@ -14,6 +14,7 @@ from starlette.websockets import WebSocketDisconnect
 from config import XRAY_API_HOST, XRAY_API_PORT, XRAY_ASSETS_PATH, XRAY_EXECUTABLE_PATH
 from logger import logger
 from xray import XRayConfig, XRayCore
+from hysteria import manager as hy2_manager
 
 
 # How long to wait for Xray's grpc API inbound to actually accept TCP
@@ -79,6 +80,13 @@ class Service(object):
         self.router.add_api_route("/stop", self.stop, methods=["POST"])
         self.router.add_api_route("/restart", self.restart, methods=["POST"])
 
+        # Hysteria2 sidecar — panel pushes config via hy2_sync without a
+        # session_id (mTLS already authenticates; hy2 isn't scoped to the
+        # xray control session). See docs/HYSTERIA2_INTEGRATION.md § 6.2.
+        self.router.add_api_route("/hy2/config", self.hy2_config, methods=["POST"])
+        self.router.add_api_route("/hy2/stop", self.hy2_stop, methods=["POST"])
+        self.router.add_api_route("/hy2/status", self.hy2_status, methods=["GET", "POST"])
+
         self.router.add_websocket_route("/logs", self.logs)
 
     def match_session_id(self, session_id: UUID):
@@ -94,6 +102,7 @@ class Service(object):
             "connected": self.connected,
             "started": self.core.started,
             "core_version": self.core_version,
+            "hy2": hy2_manager.status(),
             **kwargs
         }
 
@@ -252,6 +261,43 @@ class Service(object):
             )
 
         return self.response(api_ready=api_ready)
+
+    # ---- Hysteria2 endpoints -------------------------------------------
+    #
+    # Unlike the xray endpoints these don't require session_id — hy2 lives
+    # independently of the xray control session. mTLS on uvicorn already
+    # verifies the caller is the panel (or another whitelisted peer).
+
+    def hy2_config(self, payload: dict = Body(...)):
+        """Apply a Hysteria2 inbound config. Payload shape matches
+        ``_build_payload`` in the panel's app/xray/hy2_sync.py."""
+        required = ("listen_port", "cert_pem", "key_pem")
+        missing = [k for k in required if not payload.get(k)]
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail={"missing": missing},
+            )
+        if not payload.get("enabled", True):
+            # Admin disabled the inbound — stop any running daemon.
+            hy2_manager.stop()
+            return self.response(hy2_applied=False, reason="disabled")
+        try:
+            hy2_manager.apply(payload)
+        except Exception as exc:
+            logger.error("hy2 apply failed: %s", exc)
+            raise HTTPException(status_code=503, detail=str(exc))
+        return self.response(hy2_applied=True)
+
+    def hy2_stop(self, payload: dict = Body(default={})):
+        """Stop the hysteria subprocess. Accepts an optional body for
+        future per-inbound targeting; today we only run one inbound at
+        a time so the body is ignored."""
+        hy2_manager.stop()
+        return self.response(hy2_stopped=True)
+
+    def hy2_status(self):
+        return {"hy2": hy2_manager.status()}
 
     async def logs(self, websocket: WebSocket):
         session_id = websocket.query_params.get('session_id')
