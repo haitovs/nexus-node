@@ -124,6 +124,17 @@ class HysteriaManager:
         obfs_type = cfg.get("obfs_type")
         obfs_password = cfg.get("obfs_password")
 
+        # Panel-supplied auth URL wins over the env var fallback. This
+        # lets the panel auto-discover its own public URL and push it
+        # alongside every config, so existing nodes don't need a compose
+        # edit just to wire up hy2 auth. See app/xray/hy2_sync.py on
+        # the panel side.
+        auth_url = (
+            (cfg.get("auth_url") or "").strip()
+            or PANEL_HY2_AUTH_URL
+            or "http://127.0.0.1/api/v1/hy2-auth"
+        )
+
         out: dict = {
             "listen": f":{int(cfg['listen_port'])}",
             "tls": {
@@ -133,7 +144,7 @@ class HysteriaManager:
             "auth": {
                 "type": "http",
                 "http": {
-                    "url": PANEL_HY2_AUTH_URL or "http://127.0.0.1/api/v1/hy2-auth",
+                    "url": auth_url,
                     "insecure": False,
                 },
             },
